@@ -1,4 +1,4 @@
-// File: D:\Biblioteca\Downloads\caju-host-2\app\page.tsx
+// File: D:\Biblioteca\Documentos\EACH\Semestre_6\EI\caju\nextproject\app\page.tsx
 import * as entry from '../../../app/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

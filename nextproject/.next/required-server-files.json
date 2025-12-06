@@ -90,7 +90,6 @@
     "compiler": {},
     "expireTime": 31536000,
     "staticPageGenerationTimeout": 60,
-    "output": "export",
     "modularizeImports": {
       "@mui/icons-material": {
         "transform": "@mui/icons-material/{{member}}"
@@ -99,7 +98,7 @@
         "transform": "lodash/{{member}}"
       }
     },
-    "outputFileTracingRoot": "D:\\Biblioteca\\Downloads\\caju-host-2",
+    "outputFileTracingRoot": "D:\\Biblioteca\\Documentos\\EACH\\Semestre_6\\EI\\caju\\nextproject",
     "experimental": {
       "useSkewCookie": false,
       "cacheLife": {
@@ -288,10 +287,10 @@
     "bundlePagesRouterDependencies": false,
     "configFileName": "next.config.mjs",
     "turbopack": {
-      "root": "D:\\Biblioteca\\Downloads\\caju-host-2"
+      "root": "D:\\Biblioteca\\Documentos\\EACH\\Semestre_6\\EI\\caju\\nextproject"
     }
   },
-  "appDir": "D:\\Biblioteca\\Downloads\\caju-host-2",
+  "appDir": "D:\\Biblioteca\\Documentos\\EACH\\Semestre_6\\EI\\caju\\nextproject",
   "relativeAppDir": "",
   "files": [
     ".next\\routes-manifest.json",

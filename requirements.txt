@@ -1,0 +1,12 @@
+# --- Core API Framework ---
+flask
+flask-cors
+# Flask-CORS is crucial to allow your Next.js frontend (on port 8000)
+# to make requests to your Python backend (on port 5000).
+
+# --- Docker Integration ---
+python-docker
+# This is the official Python SDK for Docker (docker.from_env()).
+
+# --- Port Forwarding ---
+UPnPy
