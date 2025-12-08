@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
 import { Server, Bot, Zap } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -294,7 +293,7 @@ export function NewDeploymentForm() {
           <Button type="button" variant="outline" onClick={() => router.back()} className="flex-1">
             Cancelar
           </Button>
-          <Button type="submit" disabled={isLoading || !name || !type} className="flex-1">
+          <Button type="submit" disabled={isLoading || ((type === "mini-app") && !name) || !type} className="flex-1">
             {isLoading ? (statusMessage || "Criando...") : "Criar Hospedagem"}
           </Button>
         </div>
