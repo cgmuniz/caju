@@ -44,9 +44,9 @@ const pollJobStatus = async (jobId: string) => {
         if (!response.ok) {
           throw new Error(`API de Status falhou com código: ${response.status}`)
         }
-        
+
         const result = await response.json()
-        
+
         if (result.status === 'success' || result.status === 'error') {
           // Trabalho concluído (sucesso ou falha), resolve a Promise
           resolve(result)
@@ -116,7 +116,7 @@ export function NewDeploymentForm() {
       serviceType = "Minecraft Server" // Nome do template na API Python
       serviceInputs = {
         "Nome do Container": name,
-        "Porta Local (Host)": hostPort.toString(), 
+        "Porta Local (Host)": hostPort.toString(),
         // A memória deve ser uma string com 'G', conforme esperado pelo template Docker
         "Memória RAM (ex: 2G)": `${minecraftConfig.ramGB}G`,
       }
@@ -143,7 +143,7 @@ export function NewDeploymentForm() {
 
     try {
       setStatusMessage("Iniciando o Job de lançamento na API Python...")
-      
+
       // 2. POST para /api/launch
       const launchResponse = await fetch(`${API_BASE_URL}/launch`, {
         method: 'POST',
@@ -152,7 +152,7 @@ export function NewDeploymentForm() {
       })
 
       const launchData = await launchResponse.json()
-      
+
       if (!launchResponse.ok || launchData.status === 'error') {
         throw new Error(launchData.message || "Falha na requisição de lançamento.")
       }
@@ -167,11 +167,11 @@ export function NewDeploymentForm() {
       if (finalResult.status === 'success') {
         setStatusMessage(`✅ Sucesso! ${finalResult.message}`)
         // Redirecionar para o dashboard após o sucesso
-        setTimeout(() => router.push("/dashboard"), 3000) 
+        setTimeout(() => router.push("/dashboard"), 3000)
       } else {
         setError(`❌ Falha na Hospedagem: ${finalResult.message}`)
       }
-    
+
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha grave de conexão ou API.")
     } finally {
@@ -196,9 +196,8 @@ export function NewDeploymentForm() {
                     key={deploymentType.value}
                     type="button"
                     onClick={() => setType(deploymentType.value)}
-                    className={`flex flex-col items-start gap-2 rounded-lg border-2 p-4 text-left transition-colors hover:border-primary ${
-                      type === deploymentType.value ? "border-primary bg-primary/5" : "border-border"
-                    }`}
+                    className={`flex flex-col items-start gap-2 rounded-lg border-2 p-4 text-left transition-colors hover:border-primary ${type === deploymentType.value ? "border-primary bg-primary/5" : "border-border"
+                      }`}
                   >
                     <Icon className="h-8 w-8 text-primary" />
                     <div>
@@ -219,18 +218,6 @@ export function NewDeploymentForm() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="name">Nome da Hospedagem</Label>
-              <Input
-                id="name"
-                placeholder="meu-servidor-incrivel"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-              <p className="text-xs text-muted-foreground">Escolha um nome único para sua hospedagem</p>
-            </div>
-
-            <div className="space-y-2">
               <Label htmlFor="host-port">Porta de Acesso (Host)</Label>
               <Input
                 id="host-port"
@@ -243,22 +230,6 @@ export function NewDeploymentForm() {
                 required
               />
               <p className="text-xs text-muted-foreground">A porta que você usará para conectar ao serviço (Ex: 25565 para Minecraft)</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="type">Tipo</Label>
-              <Select value={type} onValueChange={setType}>
-                <SelectTrigger id="type">
-                  <SelectValue placeholder="Selecione o tipo de hospedagem" />
-                </SelectTrigger>
-                <SelectContent>
-                  {deploymentTypes.map((deploymentType) => (
-                    <SelectItem key={deploymentType.value} value={deploymentType.value}>
-                      {deploymentType.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           </CardContent>
         </Card>
@@ -274,6 +245,17 @@ export function NewDeploymentForm() {
               <CardDescription>Aloque recursos computacionais para sua hospedagem</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="name">Nome da Hospedagem</Label>
+                <Input
+                  id="name"
+                  placeholder="meu-servidor-incrivel"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">Escolha um nome único para sua hospedagem</p>
+              </div>
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <Label>Memória (RAM)</Label>
@@ -298,10 +280,9 @@ export function NewDeploymentForm() {
         ) : null}
 
         {(error || statusMessage) && (
-          <div 
-            className={`rounded-lg border p-4 ${
-              error ? "border-destructive bg-destructive/10" : "border-yellow-500 bg-yellow-500/10"
-            }`}
+          <div
+            className={`rounded-lg border p-4 ${error ? "border-destructive bg-destructive/10" : "border-yellow-500 bg-yellow-500/10"
+              }`}
           >
             <p className={`text-sm ${error ? "text-destructive" : "text-yellow-600"}`}>
               {error || statusMessage}

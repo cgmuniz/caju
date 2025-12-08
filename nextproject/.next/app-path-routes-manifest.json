@@ -1,6 +1,6 @@
 {
   "/_not-found/page": "/_not-found",
-  "/dashboard/page": "/dashboard",
   "/dashboard/new/page": "/dashboard/new",
+  "/dashboard/page": "/dashboard",
   "/page": "/"
 }
