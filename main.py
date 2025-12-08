@@ -8,6 +8,8 @@ import subprocess
 import atexit
 from upnpy.upnp import UPnP
 from typing import Dict, Any
+from collections import deque
+import uuid
 
 # --- CONFIGURATION ---
 PYTHON_API_PORT = 5000
@@ -47,6 +49,8 @@ service_templates = {
         },
     },
 }
+
+LAUNCH_RESULTS = {}
 
 def connect_docker():
     """Tenta a conexão com o Docker Daemon."""
@@ -97,29 +101,125 @@ def upnpy_port_forward(host_port: int, internal_port: int, description: str):
 
 # The core Docker launching logic, now a regular Python function
 def _launch_container(template: Dict[str, Any], user_inputs: Dict[str, Any]):
-    """Função que executa o comando Docker real para o serviço."""
-    # (Implementation omitted for brevity, but this is where your Docker SDK logic goes)
-    # ⚠️ IMPORTANT: It must return a status message (success/error)
-    # The logic from your previous file goes here, but uses 'print' instead of 'self.app_ui.after(0, self.app_ui.log_message, ...)'
+    """
+    Função que executa o comando Docker real para o serviço.
     
-    # Example placeholder for Docker logic outcome:
+    Recebe template e inputs e retorna um dicionário de status e mensagem.
+    """
+    
+    global docker_client
+    
+    LAUNCH_RESULTS[job_id] = {"status": "running", "message": "Docker launch in progress..."}
+    
+    # 1. Preparação e Mapeamento de Variáveis
     try:
-        # Simulate getting host_port and container_name from user_inputs and template
-        host_port = int(user_inputs.get("Porta Local (Host)"))
         container_name = user_inputs.get("Nome do Container")
+        image_name = template["image"]
+        # Usa o caminho relativo ao BASE_DIR para garantir que o volume seja criado corretamente
+        container_volume = os.path.abspath(os.path.join(os.path.dirname(__file__), f'./{container_name}_data')) 
         
-        # --- Port Forwarding ---
+        # O valor da porta host (str) é obtido dos inputs do usuário
+        host_port_str = user_inputs.get("Porta Local (Host)")
+        host_port = int(host_port_str)
+        
+        placeholder_map = {
+            "${PORT}": host_port_str,
+            "${RAM}": user_inputs.get("Memória RAM (ex: 2G)"),
+            "${VOLUME}": container_volume,
+        }
+
+        # 2. Configurar Portas (ports)
+        ports_config = {}
+        for placeholder_port, internal_port in template["ports"].items():
+            internal_port_key = f'{internal_port}/tcp'
+            ports_config[internal_port_key] = host_port
+
+        # 3. Configurar Variáveis de Ambiente (environment)
+        env_config = {}
+        for key, value in template["environment"].items():
+            if value.startswith("${") and value.endswith("}"):
+                env_config[key] = placeholder_map.get(value, value)
+            else:
+                env_config[key] = value
+
+        # 4. Configurar Volumes (volumes)
+        volumes_config = {}
+        for host_path_placeholder, container_path in template["volumes"].items():
+            host_path_real = placeholder_map.get(host_path_placeholder, None)
+            
+            if host_path_real:
+                # Cria a pasta do volume se ela não existir
+                if not os.path.exists(host_path_real):
+                    os.makedirs(host_path_real)
+                    print(f"INFO: Criando diretório de volume: {host_path_real}")
+                    
+                volumes_config[host_path_real] = {'bind': container_path, 'mode': 'rw'}
+
+        # --- Execução do Docker ---
+        
+        # 5. Lógica para Parar e Remover container existente
+        try:
+            container_to_remove = docker_client.containers.get(container_name)
+            print(f"AVISO: Parando e removendo container {container_name} existente.")
+            container_to_remove.stop(timeout=5)
+            container_to_remove.remove()
+        except docker.errors.NotFound:
+            pass
+        except Exception as e:
+            # Captura erro se não puder parar ou remover, mas continua
+            print(f"AVISO: Não foi possível limpar o container antigo: {e}")
+
+        # 6. Port Forwarding (UPnPy)
         upnp_success, upnp_message = upnpy_port_forward(
             host_port=host_port,
-            internal_port=25565, # Minecraft port
+            internal_port=25565, # A porta interna do container (Minecraft)
             description=f"Docker {container_name}"
         )
+        print(f"INFO UPnP: {upnp_message}")
 
-        # ... Docker run logic ...
+        # 7. Executa o Container
+        container = docker_client.containers.run(
+            image_name,
+            detach=True,
+            name=container_name,
+            ports=ports_config,
+            environment=env_config,
+            volumes=volumes_config,
+            restart_policy={"Name": "unless-stopped"}
+        )
         
-        return {"status": "success", "message": f"Container started. UPnP: {upnp_message}"}
+        # 8. Store Final Success Result
+        result_payload = {
+            "status": "success", 
+            "message": f"Container '{container_name}' iniciado com sucesso. Porta Host: {host_port}. UPnP: {upnp_message}",
+            "details": {
+                "container_id": container.id,
+                "host_port": host_port,
+                "upnp_status": "Success" if upnp_success else "Failure"
+            }
+        }
+        LAUNCH_RESULTS[job_id] = result_payload
+        return 
+
+    except docker.errors.ImageNotFound:
+        # Store Error Result
+        LAUNCH_RESULTS[job_id] = {"status": "error", "message": f"Imagem Docker '{image_name}' não encontrada."}
+        return 
+        
     except Exception as e:
-        return {"status": "error", "message": f"FATAL ERROR: {e}"}
+        # Store Fatal Error Result
+        LAUNCH_RESULTS[job_id] = {"status": "error", "message": f"ERRO FATAL ao iniciar o container: {str(e)}"}
+        return
+
+    except docker.errors.ImageNotFound:
+        # Tenta Pull da Imagem (Melhor seria fazer o Pull em um endpoint separado)
+        print(f"ERRO: Imagem Docker '{image_name}' não encontrada. Tente o Pull manualmente ou implemente o Pull aqui.")
+        return {"status": "error", "message": f"Imagem Docker '{image_name}' não encontrada."}
+        
+    except Exception as e:
+        # Retorna o erro fatal
+        print(f"ERRO FATAL ao iniciar o container: {e}")
+        return {"status": "error", "message": f"ERRO FATAL ao iniciar o container: {e}"}
 
 
 # --- API ENDPOINTS ---
@@ -147,11 +247,89 @@ def launch_container_endpoint():
     if not template:
         return jsonify({"status": "error", "message": f"Service '{service_name}' not found."}), 404
 
-    # Run the Docker logic in a separate thread to prevent blocking the API
-    thread = threading.Thread(target=_launch_container, args=(template, user_inputs))
+    job_id = str(uuid.uuid4())
+    
+    LAUNCH_RESULTS[job_id] = {"status": "initiated", "message": "Job received and queued."}
+
+    # Run the Docker logic in a separate thread, passing the job_id
+    thread = threading.Thread(target=_launch_container, args=(job_id, template, user_inputs))
     thread.start()
     
-    return jsonify({"status": "pending", "message": "Container launch initiated in background."})
+    # Return the job ID immediately
+    return jsonify({
+        "status": "initiated", 
+        "message": "Launch job started in background.", 
+        "job_id": job_id
+    })
+
+@app.route('/api/job/status/<job_id>', methods=['GET'])
+def get_job_status(job_id):
+    """Endpoint para verificar o status de um Job ID de lançamento de container."""
+    
+    result = LAUNCH_RESULTS.get(job_id)
+    
+    if not result:
+        return jsonify({"status": "error", "message": f"Job ID {job_id} not found."}), 404
+    
+    # If status is "success" or "error", the job is complete.
+    if result["status"] in ["success", "error"]:
+        LAUNCH_RESULTS.pop(job_id, None) 
+        return jsonify(result)
+        
+    # If status is still "running" or "initiated"
+    return jsonify({"status": "running", "message": result["message"]})
+
+@app.route('/api/deployments', methods=['GET'])
+def list_deployments():
+    """Retorna uma lista de containers em execução formatada para o frontend."""
+    global docker_client
+    
+    if not docker_client:
+        return jsonify({"status": "error", "message": "Docker Daemon not connected. Cannot list containers.", "deployments": []}), 500
+
+    deployments_list = []
+    
+    try:
+        # Busca apenas containers que estão 'running'
+        containers = docker_client.containers.list(filters={'status': 'running'})
+        
+        for idx, container in enumerate(containers):
+            # Tenta inferir o tipo ('minecraft', 'discord-bot') pelo nome da imagem ou rótulos
+            
+            # Exemplo de inferência de tipo (pode ser mais sofisticado)
+            image_name = container.image.tags[0] if container.image.tags else container.image.id
+            container_type = "mini-app"
+            if "minecraft" in image_name:
+                container_type = "minecraft"
+            elif "discord" in image_name or "node" in image_name:
+                container_type = "discord-bot"
+
+            # Tenta encontrar a porta Host (útil para o frontend)
+            host_port = "N/A"
+            if container.ports:
+                # Ports é um dicionário. Ex: {'25565/tcp': [{'HostIp': '0.0.0.0', 'HostPort': '25565'}]}
+                for internal_port_key, mappings in container.ports.items():
+                    if mappings:
+                        host_port = mappings[0]['HostPort']
+                        break
+                        
+            # Mapeamento para o formato do estado do Next.js
+            deployments_list.append({
+                "id": container.short_id,
+                "name": container.name,
+                "type": container_type, # Tipo inferido
+                "status": container.status, # 'running', 'exited', etc.
+                "created_at": container.attrs['Created'], # Data de criação
+                "memory_mb": container.attrs['Config'].get('Memory') or 0, # Memória alocada (pode ser 0 se não limitado)
+                "cpu_cores": container.attrs['Config'].get('NanoCpus') or 0, # Cores (também pode ser 0)
+                "host_port": host_port, # Porta para acesso
+            })
+
+    except Exception as e:
+        print(f"ERRO ao listar containers Docker: {e}")
+        return jsonify({"status": "error", "message": f"Erro interno ao consultar Docker: {e}", "deployments": []}), 500
+        
+    return jsonify({"status": "success", "deployments": deployments_list})
 
 # --- Next.js Management Functions (Moved from App Class) ---
 

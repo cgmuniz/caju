@@ -6,14 +6,15 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
 
-interface Deployment {
-  id: string
-  name: string
-  type: string
-  status: string
-  created_at: string
-  memory_mb: number
-  cpu_cores: number
+type Deployment = {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  created_at: string;
+  memory_mb: number;
+  cpu_cores: number;
+  host_port?: string | number;
 }
 
 interface DeploymentsListProps {

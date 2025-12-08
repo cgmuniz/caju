@@ -34,10 +34,40 @@ const deploymentTypes = [
   },
 ]
 
+const API_BASE_URL = "http://localhost:5000/api"
+
+const pollJobStatus = async (jobId: string) => {
+  return new Promise<any>((resolve, reject) => {
+    const checkStatus = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/job/status/${jobId}`)
+        if (!response.ok) {
+          throw new Error(`API de Status falhou com código: ${response.status}`)
+        }
+        
+        const result = await response.json()
+        
+        if (result.status === 'success' || result.status === 'error') {
+          // Trabalho concluído (sucesso ou falha), resolve a Promise
+          resolve(result)
+        } else {
+          // Trabalho em andamento, tenta novamente
+          setTimeout(checkStatus, 2000) // Polling a cada 2 segundos
+        }
+      } catch (err) {
+        // Erro de conexão ou parsing, rejeita
+        reject(err)
+      }
+    }
+    checkStatus()
+  })
+}
+
 export function NewDeploymentForm() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null) // Novo estado para feedback de polling
 
   const [name, setName] = useState("")
   const [type, setType] = useState<string>("")
@@ -75,12 +105,77 @@ export function NewDeploymentForm() {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
+    setStatusMessage(null)
+
+    // 1. Mapeamento de Dados Específicos do Serviço
+    let serviceInputs: { [key: string]: any } = {}
+    let serviceType: string;
+
+    if (type === "minecraft") {
+      serviceType = "Minecraft Server" // Nome do template na API Python
+      serviceInputs = {
+        "Nome do Container": name,
+        // Nota: A porta Host é um campo que falta no seu formulário atual. 
+        // Para corresponder à API Python, estou usando 25565 como fallback. 
+        // Você deve adicionar um campo de input para a porta host.
+        "Porta Local (Host)": 25565, 
+        // A memória deve ser uma string com 'G', conforme esperado pelo template Docker
+        "Memória RAM (ex: 2G)": `${minecraftConfig.ramGB}G`,
+      }
+      // Adicionar outros campos que a API Python pode usar para o Docker (versão, seed, etc.)
+      // ... (Omissão de mapeamento completo para simplificar o exemplo)
+
+    } else if (type === "discord-bot") {
+      serviceType = "Discord Bot" // Exemplo
+      serviceInputs = {
+        "Nome do Container": name,
+        // ... (Mapear as configs do DiscordBot aqui)
+      }
+    } else {
+      setError("Selecione um tipo de hospedagem válido.")
+      setIsLoading(false)
+      return
+    }
+
+    // Payload final para a API Python
+    const payload = {
+      service_name: serviceType,
+      user_inputs: serviceInputs,
+    }
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-      router.push("/dashboard")
+      setStatusMessage("Iniciando o Job de lançamento na API Python...")
+      
+      // 2. POST para /api/launch
+      const launchResponse = await fetch(`${API_BASE_URL}/launch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const launchData = await launchResponse.json()
+      
+      if (!launchResponse.ok || launchData.status === 'error') {
+        throw new Error(launchData.message || "Falha na requisição de lançamento.")
+      }
+
+      const jobId = launchData.job_id
+      setStatusMessage(`Job iniciado. ID: ${jobId}. Aguardando conclusão do Docker...`)
+
+      // 3. Polling para /api/job/status/{jobId}
+      const finalResult = await pollJobStatus(jobId)
+
+      // 4. Tratamento do Resultado Final
+      if (finalResult.status === 'success') {
+        setStatusMessage(`✅ Sucesso! ${finalResult.message}`)
+        // Redirecionar para o dashboard após o sucesso
+        setTimeout(() => router.push("/dashboard"), 3000) 
+      } else {
+        setError(`❌ Falha na Hospedagem: ${finalResult.message}`)
+      }
+    
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao criar hospedagem")
+      setError(err instanceof Error ? err.message : "Falha grave de conexão ou API.")
     } finally {
       setIsLoading(false)
     }
@@ -189,9 +284,15 @@ export function NewDeploymentForm() {
           </Card>
         ) : null}
 
-        {error && (
-          <div className="rounded-lg border border-destructive bg-destructive/10 p-4">
-            <p className="text-sm text-destructive">{error}</p>
+        {(error || statusMessage) && (
+          <div 
+            className={`rounded-lg border p-4 ${
+              error ? "border-destructive bg-destructive/10" : "border-yellow-500 bg-yellow-500/10"
+            }`}
+          >
+            <p className={`text-sm ${error ? "text-destructive" : "text-yellow-600"}`}>
+              {error || statusMessage}
+            </p>
           </div>
         )}
 
@@ -200,7 +301,7 @@ export function NewDeploymentForm() {
             Cancelar
           </Button>
           <Button type="submit" disabled={isLoading || !name || !type} className="flex-1">
-            {isLoading ? "Criando..." : "Criar Hospedagem"}
+            {isLoading ? (statusMessage || "Criando...") : "Criar Hospedagem"}
           </Button>
         </div>
       </div>
