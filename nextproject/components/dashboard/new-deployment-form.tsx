@@ -114,7 +114,7 @@ export function NewDeploymentForm() {
     if (type === "minecraft") {
       serviceType = "Minecraft Server" // Nome do template na API Python
       serviceInputs = {
-        "Nome do Container": name,
+        "Nome do Container": minecraftConfig.serverName,
         "Porta Local (Host)": hostPort.toString(),
         // A memória deve ser uma string com 'G', conforme esperado pelo template Docker
         "Memória RAM (ex: 2G)": `${minecraftConfig.ramGB}G`,

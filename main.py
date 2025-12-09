@@ -68,12 +68,13 @@ def upnpy_port_forward(host_port: int, internal_port: int, description: str):
     """Tenta abrir a porta no roteador usando UPnPy."""
     print(f"INFO: Tentando encaminhar porta {host_port} via UPnPy...")
     try:
-        upnp = UPnP()
+        upnp = UPnP.UPnP()
         # Discover gateway devices (this can take a few seconds)
-        upnp.discover(delay=10) 
+        upnp.discover(delay=20) 
         
-        if not upnp.hosts:
-            return False, "AVISO: Roteador compatível com UPnP não encontrado."
+        if not hasattr(upnp, 'hosts') or not upnp.hosts:
+             # Retorna AVISO se nenhum roteador for encontrado
+             return False, "AVISO: Roteador compatível com UPnP não encontrado ou não respondeu."
 
         # Assumindo o primeiro dispositivo encontrado
         gateway = upnp.hosts[0].service['WANIPConnection']
@@ -280,8 +281,7 @@ def list_deployments():
     deployments_list = []
     
     try:
-        # Busca apenas containers que estão 'running'
-        containers = docker_client.containers.list(filters={'status': 'running'})
+        containers = docker_client.containers.list(all=True)
         
         for idx, container in enumerate(containers):
             # Tenta inferir o tipo ('minecraft', 'discord-bot') pelo nome da imagem ou rótulos
@@ -321,6 +321,81 @@ def list_deployments():
         
     return jsonify({"status": "success", "deployments": deployments_list})
 
+@app.route('/api/deployments/<id>/metrics', methods=['GET'])
+def get_deployment_metrics(id):
+    global docker_client
+    
+    try:
+        container = docker_client.containers.get(id)
+        
+        stats_result = container.stats(stream=False)
+        
+        try:
+            stats = next(stats_result)
+        except TypeError:
+            stats = stats_result
+            
+        if not isinstance(stats, dict):
+             raise TypeError(f"A API de stats retornou tipo inválido: {type(stats)}")
+        
+        # --- Cálculo do Uso de CPU ---
+        cpu_percent = 0.0
+        
+        cpu_stats = stats.get('cpu_stats', {})
+        precpu_stats = stats.get('precpu_stats', {})
+        
+        if cpu_stats and precpu_stats:
+            # Uso total de CPU pelo container
+            container_cpu_usage = cpu_stats.get('cpu_usage', {}).get('total_usage', 0)
+            pre_container_cpu_usage = precpu_stats.get('cpu_usage', {}).get('total_usage', 0)
+            
+            # Uso total de CPU do sistema host
+            system_cpu_usage = cpu_stats.get('system_cpu_usage', 0)
+            pre_system_cpu_usage = precpu_stats.get('system_cpu_usage', 0)
+            
+            # Número de CPUs disponíveis online
+            number_cpus = cpu_stats.get('online_cpus', 1) 
+            
+            # Calculando deltas
+            cpu_delta = container_cpu_usage - pre_container_cpu_usage
+            system_delta = system_cpu_usage - pre_system_cpu_usage
+            
+            if system_delta > 0:
+                # Fórmula de cálculo de CPU em %
+                # NOTA: O cálculo deve ser float
+                cpu_percent = (cpu_delta / system_delta) * number_cpus * 100.0
+        
+        # --- Cálculo do Uso de RAM ---
+        mem_stats = stats.get('memory_stats', {})
+        mem_usage_bytes = mem_stats.get('usage', 0)
+        
+        # O limite deve ser obtido de forma segura (0 se não for encontrado)
+        mem_limit_bytes = mem_stats.get('limit', 0) 
+        
+        ram_percent = 0.0
+        if mem_limit_bytes > 0:
+            ram_percent = (mem_usage_bytes / mem_limit_bytes) * 100.0
+            
+        return jsonify({
+            "status": "success",
+            "metrics": {
+                "cpu_usage": cpu_percent,
+                "ram_usage": ram_percent,
+                "ram_used_mb": mem_usage_bytes / (1024 * 1024),
+                "timestamp": stats.get('read') 
+            }
+        })
+        
+    except docker.errors.NotFound:
+        return jsonify({"status": "error", "message": "Container não encontrado para métricas."}), 404
+    except StopIteration:
+        # Se o container não está rodando, não há estatísticas.
+        return jsonify({"status": "error", "message": "Container não está ativo ou não produz estatísticas."}), 400
+    except Exception as e:
+        print(f"ERRO FATAL NA API DE MÉTRICAS ({id}): {str(e)}")
+        # Retorna 500 para o frontend
+        return jsonify({"status": "error", "message": f"Erro fatal no servidor ao buscar métricas: {str(e)}"}), 500
+
 @app.route('/api/deployments/<id>/stop', methods=['POST'])
 def stop_deployment(id):
     try:
@@ -336,7 +411,7 @@ def stop_deployment(id):
 def start_deployment(id):
     try:
         container = docker_client.containers.get(id)
-        container.start(timeout=5)
+        container.start()
         return jsonify({"status": "success", "message": f"Container {id} iniciado."})
     except docker.errors.NotFound:
         return jsonify({"status": "error", "message": "Container não encontrado."}), 404
@@ -347,11 +422,19 @@ def start_deployment(id):
 def delete_deployment(id):
     try:
         container = docker_client.containers.get(id)
-        container.remove(force=True, timeout=5)
+        
+        # 💡 NOVO: Garante que o container esteja parado antes de tentar remover.
+        if container.status == 'running':
+            container.stop(timeout=5)
+            
+        container.remove(force=True)
+        
         return jsonify({"status": "success", "message": f"Container {id} excluído."})
     except docker.errors.NotFound:
         return jsonify({"status": "error", "message": "Container não encontrado."}), 404
     except Exception as e:
+        # 💡 Dica: Imprima o erro para o terminal para depuração
+        print(f"ERRO DELETANDO CONTAINER {id}: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # --- Next.js Management Functions (Moved from App Class) ---

@@ -55,25 +55,47 @@ export function DeploymentDetails({
 }: DeploymentDetailsProps) {
   const [deployment, setDeployment] = useState(initialDeployment)
   const [loading, setLoading] = useState(false)
-
   const [apiError, setApiError] = useState<string | null>(null)
 
-  // Simulate real-time metrics updates
   useEffect(() => {
-    const interval = setInterval(() => {
-      setDeployment((prev) => ({
-        ...prev,
-        metrics: {
-          cpu_usage: Math.random() * 100,
-          ram_usage: Math.random() * 100,
-          uptime: (prev.metrics?.uptime || 0) + 1,
-          requests: (prev.metrics?.requests || 0) + Math.floor(Math.random() * 10),
-        },
-      }))
-    }, 3000)
+    const fetchMetrics = async () => {
+      try {
+        if (deployment.status !== 'running') {
+          // Não busca métricas se o container estiver parado
+          setDeployment(prev => ({ ...prev, metrics: { cpu_usage: 0, ram_usage: 0, uptime: prev.metrics?.uptime } }));
+          return;
+        }
 
-    return () => clearInterval(interval)
-  }, [])
+        const response = await fetch(`${API_BASE_URL}/deployments/${deployment.id}/metrics`);
+        const data = await response.json();
+
+        if (response.ok && data.status === 'success') {
+          setDeployment(prev => ({
+            ...prev,
+            metrics: {
+              cpu_usage: data.metrics.cpu_usage,
+
+              ram_usage: data.metrics.ram_usage,
+
+              uptime: (prev.metrics?.uptime || 0) + 3,
+              requests: prev.metrics?.requests
+            },
+          }));
+        } else if (data.message.includes('Container não está ativo')) {
+          // Se o container parou, zera as métricas
+          setDeployment(prev => ({ ...prev, metrics: { cpu_usage: 0, ram_usage: 0, uptime: prev.metrics?.uptime } }));
+        }
+
+      } catch (error) {
+        console.error("Falha ao buscar métricas:", error);
+      }
+    };
+
+    const interval = setInterval(fetchMetrics, 3000); // Polling a cada 3 segundos
+    fetchMetrics(); // Executa imediatamente
+
+    return () => clearInterval(interval);
+  }, [deployment.id, deployment.status]);
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -218,10 +240,6 @@ export function DeploymentDetails({
             <Activity className="mr-2 h-4 w-4" />
             Visão Geral
           </TabsTrigger>
-          {/* <TabsTrigger value="monitoring">
-            <Activity className="mr-2 h-4 w-4" />
-            Monitoramento
-          </TabsTrigger> */}
           <TabsTrigger value="settings">
             <Settings className="mr-2 h-4 w-4" />
             Configurações
@@ -229,81 +247,6 @@ export function DeploymentDetails({
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">CPU</CardTitle>
-                <Cpu className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{deployment.cpu_cores} vCPU</div>
-                <p className="text-xs text-muted-foreground">Núcleos alocados</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">RAM</CardTitle>
-                <MemoryStick className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{deployment.memory_mb} MB</div>
-                <p className="text-xs text-muted-foreground">Memória alocada</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Uptime</CardTitle>
-                <Clock className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatUptime(deployment.metrics?.uptime || 0)}</div>
-                <p className="text-xs text-muted-foreground">Tempo ativo</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Requisições</CardTitle>
-                <Activity className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{deployment.metrics?.requests || 0}</div>
-                <p className="text-xs text-muted-foreground">Total de requisições</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Informações da Hospedagem</CardTitle>
-              <CardDescription>Detalhes e configurações da sua hospedagem</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">ID</p>
-                  <p className="font-mono text-sm">{deployment.id}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Criado em</p>
-                  <p className="text-sm">{new Date(deployment.created_at).toLocaleString("pt-BR")}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Tipo</p>
-                  <p className="text-sm">{deployment.type.replace("-", " ")}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Status</p>
-                  <Badge variant={getStatusColor(deployment.status)}>{deployment.status}</Badge>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="monitoring" className="space-y-6">
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
               <CardHeader>
@@ -346,16 +289,27 @@ export function DeploymentDetails({
 
           <Card>
             <CardHeader>
-              <CardTitle>Logs em Tempo Real</CardTitle>
-              <CardDescription>Últimas atividades da aplicação</CardDescription>
+              <CardTitle>Informações da Hospedagem</CardTitle>
+              <CardDescription>Detalhes e configurações da sua hospedagem</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="rounded-lg bg-black p-4 font-mono text-sm text-green-400">
-                <div>[{new Date().toLocaleTimeString()}] Aplicação iniciada com sucesso</div>
-                <div>[{new Date().toLocaleTimeString()}] Conectado ao banco de dados</div>
-                <div>[{new Date().toLocaleTimeString()}] Servidor rodando na porta 3000</div>
-                <div>[{new Date().toLocaleTimeString()}] Requisição recebida: GET /api/health</div>
-                <div>[{new Date().toLocaleTimeString()}] Status: 200 OK</div>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">ID</p>
+                  <p className="font-mono text-sm">{deployment.id}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Criado em</p>
+                  <p className="text-sm">{new Date(deployment.created_at).toLocaleString("pt-BR")}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Tipo</p>
+                  <p className="text-sm">{deployment.type.replace("-", " ")}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Status</p>
+                  <Badge variant={getStatusColor(deployment.status)}>{deployment.status}</Badge>
+                </div>
               </div>
             </CardContent>
           </Card>
